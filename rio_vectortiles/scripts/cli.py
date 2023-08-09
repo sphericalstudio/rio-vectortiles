@@ -99,6 +99,9 @@ def clump_tiles(mbtiles, output_clump, output_index):
 @click.option(
     "--filter-on-val", type=str, default=None, help="Only keep vectors with this value"
 )
+@click.option(
+    "--layer-name", type=str, default="raster", help="Only keep vectors with this value"
+)
 @click.option("--dryrun", is_flag=True)
 def vectortiles(
     input_raster,
@@ -110,6 +113,7 @@ def vectortiles(
     minzoom,
     bbox,
     filter_on_val,
+    layer_name,
     dryrun,
 ):
     """Raster-optimized vector tiler"""
@@ -182,8 +186,8 @@ def vectortiles(
                         {
                             "vector_layers": [
                                 {
-                                    "id": "raster",
-                                    "minzoom": 0,
+                                    "id": layer_name,
+                                    "minzoom": minzoom,
                                     "maxzoom": maxzoom,
                                     "fields": {
                                         "val": "Number",
@@ -203,6 +207,7 @@ def vectortiles(
                 extent_func=extent_func,
                 interval=interval,
                 filter_on_val=filter_on_val,
+                layer_name=layer_name,
             )
             tile_sizes = {z: [] for z in range(minzoom, maxzoom + 1)}
             # shuffle the tiles to make a better guess as to tiling time
