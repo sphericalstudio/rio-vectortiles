@@ -14,8 +14,9 @@ from rasterio.transform import from_bounds
 from rasterio.enums import Resampling
 import warnings
 from itertools import groupby
+from rio_vectortiles.split import katana
 
-warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
+warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning) #type: ignore
 
 
 def decompress_tile(tile_data):
@@ -28,11 +29,12 @@ def decompress_tile(tile_data):
 def read_transform_tile(
     tile,
     src_path=None,
-    output_kwargs=None,
+    output_kwargs={},
     extent_func=None,
     interval=1,
     layer_name="raster",
     filters=[],
+    filter_on_val=[],
 ):
     """Warp to dimensions and vectorize
 
@@ -61,9 +63,10 @@ def read_transform_tile(
         the passed-through tile object
     """
     xy_bounds = mercantile.xy_bounds(*tile)
+    if extent_func is None:
+        raise ValueError("extent_func must be provided")
     extent = extent_func(tile.z)
     dst_transform = from_bounds(*xy_bounds, extent, extent)
-
     dst_kwargs = {
         **output_kwargs,
         **{"transform": dst_transform, "width": extent, "height": extent},
@@ -72,33 +75,35 @@ def read_transform_tile(
     with rasterio.open(src_path) as src:
         src_band = rasterio.band(src, bidx=1)
         vtile = Tile()
-
-        layer = Layer(vtile, layer_name.encode(), extent=extent)
+        layer = Layer(vtile, layer_name.encode(), version=2, extent=extent)
         sieve_value = 2
         with MemoryFile() as mem:
             with mem.open(**dst_kwargs) as dst:
                 dst_band = rasterio.band(dst, bidx=1)
                 reproject(src_band, dst_band, resampling=Resampling.mode)
                 dst.transform = Affine.identity()
-                if interval is None and sieve_value:
+                if interval is None:
                     data = sieve(dst_band, sieve_value)
-                    vectorizer = shapes(data)
-                elif interval is not None:
-                    data = dst.read(1)
-                    for f in filters:
-                        data = f(data)
-                    data = (data // interval * interval).astype(np.int32)
-                    vectorizer = shapes(data)
                 else:
-                    vectorizer = shapes(dst_band)
+                    data = dst.read(1)
+                    data = (data // interval * interval).astype(np.int32)
+
+                if filter_on_val:
+                    data = data.astype(np.int32)
+                    mask = np.isin(data, filter_on_val)
+                    data[~mask] = -1
+
+
+                vectorizer = shapes(data)
 
                 grouped_vectors = groupby(
                     sorted(vectorizer, key=lambda x: x[1]), key=lambda x: x[1]
                 )
 
                 for v, geoms in grouped_vectors:
-                    feature = Polygon(layer)
-                    feature.set_id(v)
+                    if filter_on_val is not None and v == -1:
+                        continue
+
                     geoms = geometry.MultiPolygon(
                         [geometry.shape(g) for g, _ in geoms]
                     ).buffer(0)
@@ -106,17 +111,25 @@ def read_transform_tile(
                         iter_polys = [geoms]
                     else:
                         iter_polys = geoms.geoms
-                    for geom in iter_polys:
-                        feature.add_ring(len(geom.exterior.coords))
-                        for coord in geom.exterior.coords:
-                            feature.set_point(*coord)
-                        for part in geom.interiors:
-                            feature.add_ring(len(part.coords))
-                            for coord in part.coords:
+                    for possibly_large_geom in iter_polys:
+                        # while the vertices limit in mapbox gl is 65535, we need to
+                        # account for the fact the vertices are added as part of rendering
+                        # so we need to be well under the limit to ensure all features are rendered properly
+                        # How did we get to 5000? Kept descending until we got to a number that worked.
+                        # This would be dataset dependent, but not sure how we'd programmatically determine this
+                        # because it depends no the gl rendering process.
+                        limited_coord_geoms = katana(possibly_large_geom, 5000)
+                        for geom in limited_coord_geoms:
+                            feature = Polygon(layer)
+                            feature.add_ring(len(geom.exterior.coords))
+                            for coord in geom.exterior.coords:
                                 feature.set_point(*coord)
-                    # feature.add_property(b"v", f"{int(v)}".encode())
-                    feature.commit()
-
+                            for part in geom.interiors:
+                                feature.add_ring(len(part.coords))
+                                for coord in part.coords:
+                                    feature.set_point(*coord)
+                            feature.add_property(b"val", v)
+                            feature.commit()
     with BytesIO() as dst:
         with gzip.open(dst, mode="wb") as gz:
             gz.write(vtile.serialize())

@@ -96,6 +96,9 @@ def clump_tiles(mbtiles, output_clump, output_index):
 @click.option(
     "--bbox", type=str, default=None, help="Only generate tiles within this bbox"
 )
+@click.option(
+    "--filter-on-val", type=str, default=None, help="Only keep vectors with this value"
+)
 @click.option("--dryrun", is_flag=True)
 def vectortiles(
     input_raster,
@@ -104,8 +107,9 @@ def vectortiles(
     max_extent,
     interval,
     zoom_adjust,
-    bbox,
     minzoom,
+    bbox,
+    filter_on_val,
     dryrun,
 ):
     """Raster-optimized vector tiler"""
@@ -159,7 +163,7 @@ def vectortiles(
             )
             cur.execute(
                 "INSERT INTO metadata (name, value) VALUES (?, ?);",
-                ("type", "pbf"),
+                ("format", "pbf"),
             )
             cur.execute(
                 "INSERT INTO metadata (name, value) VALUES (?, ?);",
@@ -181,20 +185,24 @@ def vectortiles(
                                     "id": "raster",
                                     "minzoom": 0,
                                     "maxzoom": maxzoom,
-                                    "fields": {},
+                                    "fields": {
+                                        "val": "Number",
+                                    },
                                 }
                             ]
                         }
                     ),
                 ),
             )
-
+            if filter_on_val:
+                filter_on_val = [int(val) for val in filter_on_val.split(",")]
             tiling_func = partial(
                 read_transform_tile,
                 src_path=input_raster,
                 output_kwargs=dst_profile,
                 extent_func=extent_func,
                 interval=interval,
+                filter_on_val=filter_on_val,
             )
             tile_sizes = {z: [] for z in range(minzoom, maxzoom + 1)}
             # shuffle the tiles to make a better guess as to tiling time
@@ -223,3 +231,4 @@ def vectortiles(
                         "max": max(t) / 1000,
                     }
                 )
+
