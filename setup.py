@@ -6,7 +6,7 @@ with open("README.md") as f:
 
 setup(
     name="rio-vectortiles",
-    version="0.1.1",
+    version="0.1.2",
     description="Make vectortiles from rasters",
     long_description=readme,
     keywords="mapping, web mercator, tiles",
