@@ -122,12 +122,22 @@ def read_transform_tile(
                         for geom in limited_coord_geoms:
                             feature = Polygon(layer)
                             feature.add_ring(len(geom.exterior.coords))
+                            previous_coord = None
                             for coord in geom.exterior.coords:
+                                coord = (int(coord[0]), int(coord[1]))
+                                if previous_coord is not None and coord[0] == previous_coord[0] and coord[1] == previous_coord[1]:
+                                    continue
                                 feature.set_point(*coord)
+                                previous_coord = coord
                             for part in geom.interiors:
                                 feature.add_ring(len(part.coords))
+                                previous_coord = None
                                 for coord in part.coords:
+                                    coord = (int(coord[0]), int(coord[1]))
+                                    if previous_coord is not None and coord[0] == previous_coord[0] and coord[1] == previous_coord[1]:
+                                        continue
                                     feature.set_point(*coord)
+                                    previous_coord = coord
                             feature.add_property(b"val", v)
                             feature.commit()
     with BytesIO() as dst:

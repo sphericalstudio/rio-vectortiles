@@ -137,7 +137,7 @@ def vectortiles(
             f"Generating {len(tiles):,} tiles from zooms {minzoom}-{maxzoom} within {wgs_bounds}",
             err=True,
         )
-        click.echo(f"Using internal extents of {extents}", err=True)
+        click.echo(f"Using internal extents of {extents}.", err=True)
         if not dryrun:
             dst_profile = dict(
                 driver="GTiff", count=1, dtype=src.meta["dtype"], crs="EPSG:3857"
