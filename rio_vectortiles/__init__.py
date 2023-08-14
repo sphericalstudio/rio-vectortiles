@@ -26,6 +26,18 @@ def decompress_tile(tile_data):
             return gz.read()
 
 
+def filtered_coords(coords):
+    """ Filter out duplicate coords"""
+    fixed_coords = []
+    previous_coord =  None
+    for coord in coords:
+        coord = (int(coord[0]), int(coord[1]))
+        if previous_coord is not None and coord[0] == previous_coord[0] and coord[1] == previous_coord[1]:
+            continue
+        fixed_coords.append(coord)
+        previous_coord = coord
+    return fixed_coords
+
 def read_transform_tile(
     tile,
     src_path=None,
@@ -120,24 +132,27 @@ def read_transform_tile(
                         # because it depends no the gl rendering process.
                         limited_coord_geoms = katana(possibly_large_geom, 5000)
                         for geom in limited_coord_geoms:
+                            fixed_exterior_coords = filtered_coords(geom.exterior.coords)
+                            if len(fixed_exterior_coords) < 3:
+                                print("""Skipping feature part with less than 3 vertices""", len(fixed_exterior_coords))
+                                continue
                             feature = Polygon(layer)
-                            feature.add_ring(len(geom.exterior.coords))
-                            previous_coord = None
-                            for coord in geom.exterior.coords:
+                            feature.add_ring(len(fixed_exterior_coords))
+
+                            for coord in fixed_exterior_coords:
                                 coord = (int(coord[0]), int(coord[1]))
-                                if previous_coord is not None and coord[0] == previous_coord[0] and coord[1] == previous_coord[1]:
-                                    continue
                                 feature.set_point(*coord)
-                                previous_coord = coord
                             for part in geom.interiors:
-                                feature.add_ring(len(part.coords))
-                                previous_coord = None
-                                for coord in part.coords:
+                                fixed_part_coords = filtered_coords(part.coords)
+                                if len(fixed_part_coords) < 3:
+                                    print("""Skipping feature part with less than 3 vertices""", len(fixed_part_coords))
+                                    continue
+
+                                feature.add_ring(len(fixed_part_coords))
+                                for coord in fixed_part_coords:
                                     coord = (int(coord[0]), int(coord[1]))
-                                    if previous_coord is not None and coord[0] == previous_coord[0] and coord[1] == previous_coord[1]:
-                                        continue
                                     feature.set_point(*coord)
-                                    previous_coord = coord
+
                             feature.add_property(b"val", v)
                             feature.commit()
     with BytesIO() as dst:

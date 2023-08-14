@@ -2,6 +2,7 @@ import click
 import os
 import json
 import numpy as np
+from pathlib import Path
 import mercantile
 import sqlite3
 import rasterio
@@ -175,7 +176,7 @@ def vectortiles(
             )
             cur.execute(
                 "INSERT INTO metadata (name, value) VALUES (?, ?);",
-                ("description", f"{input_raster}"),
+                ("description", f"{Path(input_raster).name}"),
             )
 
             cur.execute(
